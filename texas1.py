@@ -262,8 +262,435 @@ DEPARTMENT_CREDENTIALS = {
 }
 
 print("✅ Credentials loaded successfully!")
- 
+
+# ===== COMPLETE ENHANCED REGEX EXTRACTION CLASS =====
+
+# ===== FIXED REGEX EXTRACTION CLASS =====
+
+# ===== FIXED REGEX EXTRACTION CLASS WITH PERIOD-BASED LINE BREAKS =====
+
+class RegexDataExtractor:
+    def __init__(self):
+        self.patterns = {
+            'solicitation_number': [
+                r'Solicitation Reference Number:\s*([A-Z0-9]+)',
+                r'Response Number:\s*([A-Z0-9]+)',
+                r'Solicitation Reference Number:\s*(\d+)',
+                r'Reference Number:\s*([A-Z0-9]+)'
+            ],
+            'nte_rate': [
+                r'NTE Rate:\$?([\d\.]+)',
+                r'NTE Rate:\$([\d\.]+)',
+                r'NTE Rate\s*\$([\d\.]+)',
+                r'HHSC MAX NTE Rate:\s*\$?([\d\.]+)',
+                r'MAX NTE Rate:\s*\$?([\d\.]+)',
+            ],
+            'response_deadline': [
+                # ORIGINAL PATTERNS - They should work!
+               r'response must be received by\s*(\d{1,2}/\d{1,2}/\d{4})',
+               r'received by\s*(\d{1,2}/\d{1,2}/\d{4})',
+               r'due by\s*(\d{1,2}/\d{1,2}/\d{4})',
+    
+               # NEW: Section VIII specific pattern (for your exact format)
+               r'VIII\.\s*RESPONSE DEADLINE[\s\S]*?response must be received by[\s\S]*?(\d{1,2}/\d{1,2}/\d{4})',
+               r'VIII\.\s*RESPONSE DEADLINE[\s\S]*?received by[\s\S]*?(\d{1,2}/\d{1,2}/\d{4})',
+    
+               # Fallback: Just look for any date in Section VIII
+               r'VIII\.\s*RESPONSE DEADLINE[\s\S]*?(\d{1,2}/\d{1,2}/\d{4})',
+            ],
+            'work_location': [
+                r'The primary work location.*?will be at\s*([^\n]+)',
+                r'Work Location:\s*([^\n]+)',
+                r'The primary work location will be\s*([^\n]+)',
+            ],
+            'work_arrangement': [
+                r'Work Arrangement:\s*([^\n]+)',
+                r'The working position is\s*([^\n]+)',
+                r'working position\s*is\s*([^\n]+)',
+                r'Position is\s*([^\n]+)',
+            ],
+            'start_date': [
+                r'Services are expected to start\s*(\d{1,2}/\d{1,2}/\d{4})',
+                r'Start Date:\s*(\d{1,2}/\d{1,2}/\d{4})',
+            ],
+            'end_date': [
+                r'complete by\s*(\d{1,2}/\d{1,2}/\d{4})',
+                r'End Date:\s*(\d{1,2}/\d{1,2}/\d{4})',
+            ],
+            'positions': [
+                r'Vendor may submit no more than\s*(\d+)\s*candidate',
+                r'may submit.*?(\d+)\s*candidate',
+                r'requires the services of\s*(\d+)\s*([^,]+),',
+            ],
+            'skills_section': [
+                r'II\.\s*CANDIDATE SKILLS AND QUALIFICATIONS(.*?)(?=III\.\s*TERMS OF SERVICE|IV\.\s*WORK HOURS AND LOCATION|$)',
+                r'CANDIDATE SKILLS AND QUALIFICATIONS(.*?)(?=TERMS OF SERVICE|WORK HOURS AND LOCATION|$)',
+                r'II\.\s*CANDIDATE SKILLS AND QUALIFICATIONS(.*?)(?=Minimum Requirements:)',
+            ],
+            'description_section': [
+                r'I\.\s*DESCRIPTION OF SERVICES(.*?)(?=II\.\s*CANDIDATE SKILLS AND QUALIFICATIONS|CANDIDATE SKILLS AND QUALIFICATIONS|$)',
+                r'DESCRIPTION OF SERVICES(.*?)(?=CANDIDATE SKILLS AND QUALIFICATIONS|$)',
+                r'I\.\s*DESCRIPTION OF SERVICES(.*?)(?=Level Description|Job Description|Additional job details)',
+            ],
+            'department': [
+                r'DEPARTMENT:\s*([^\n]+)',
+                r'Texas Health and Human Services Commission',
+                r'Texas Department of Family and Protective Services',
+            ]
+        }
+
+    def extract_bill_rate_and_dates(self, file_content):
+        """Enhanced extraction for bill rate and dates"""
+        print("  🔍 Extracting bill_rate from document...")
+        bill_rate = "000"
+        
+        all_nte_rates = []
+        for pattern in self.patterns['nte_rate']:
+            matches = re.findall(pattern, file_content, re.IGNORECASE)
+            if matches:
+                all_nte_rates.extend(matches)
+                print(f"    ✅ Pattern found: {matches}")
+        
+        if all_nte_rates:
+            try:
+                bill_rates = [int(float(rate)) for rate in all_nte_rates]
+                lowest_rate = min(bill_rates)
+                bill_rate = str(lowest_rate)
+                print(f"  ✅ Found {len(all_nte_rates)} NTE rates: {all_nte_rates}")
+                print(f"  ✅ Using LOWEST BILL_RATE: {bill_rate}")
+            except ValueError as e:
+                print(f"  ❌ Error converting rates: {e}")
+        else:
+            print(f"  ⚠️ No NTE Rate found, using default: {bill_rate}")
+        
+        print("  🔍 Extracting due date from document...")
+        date_mmdd = "0000"
+
+        # SIMPLE AND DIRECT - No complex section extraction
+        # Look for the exact text pattern
+        date_match = re.search(r'response must be received by[^\d]*(\d{1,2})/(\d{1,2})/(\d{4})', file_content, re.IGNORECASE)
+
+        if date_match:
+            month = date_match.group(1).zfill(2)
+            day = date_match.group(2).zfill(2)
+            date_mmdd = month + day
+            print(f"  ✅ Found date: {month}/{day}/2025")
+            print(f"  ✅ Extracted MMDD: {date_mmdd}")
+        else:
+            print(f"  ⚠️ No due date found with simple pattern")
+    
+        if date_mmdd == "0000":
+            print(f"  ⚠️ No due date found, using default: {date_mmdd}")
+    
+        return bill_rate, date_mmdd    
+    def extract_core_data(self, raw_content, filename):
+        """Extract only the essential data using regex from scraped content"""
+        print(f"  🔍 Regex extracting core data from {filename}...")
+        
+        extracted = {}
+        
+        for field, patterns in self.patterns.items():
+            if field in ['nte_rate', 'response_deadline']:
+                continue
+            
+            for pattern in patterns:
+                try:
+                    if field in ['skills_section', 'description_section']:
+                        match = re.search(pattern, raw_content, re.IGNORECASE | re.DOTALL)
+                        if match:
+                            content = match.group(1).strip()
+                            # PRESERVE original line breaks - only clean up excessive spaces within lines
+                            content = re.sub(r'[ \t]+', ' ', content)  # Clean up multiple spaces within lines
+                            content = re.sub(r'\n[ \t]+\n', '\n\n', content)  # Clean up blank lines but keep paragraph breaks
+                            extracted[field] = content
+                            print(f"    ✅ Extracted {field}: {len(content)} chars")
+                            break
+                    else:
+                        match = re.search(pattern, raw_content, re.IGNORECASE)
+                        if match:
+                            extracted[field] = match.group(1).strip()
+                            print(f"    ✅ Extracted {field}: {match.group(1)}")
+                            break
+                except Exception as e:
+                    continue
+            else:
+                extracted[field] = None
+                print(f"    ❌ No match for {field}")
+        
+        # Extract bill rate and dates separately
+        bill_rate, date_mmdd = self.extract_bill_rate_and_dates(raw_content)
+        extracted['bill_rate'] = bill_rate
+        extracted['response_deadline_mmdd'] = date_mmdd
+    
+        # ADD THIS: Extract the full date string
+        extracted['due_date_full'] = self.extract_full_due_date(raw_content)
+    
+        return extracted
+    
+    def extract_full_due_date(self, file_content):
+        """Extract the full due date string from document"""
+        print("  🔍 Extracting full due date from document...")
+        due_date_full = "Date not specified"
+    
+        for pattern in self.patterns['response_deadline']:
+            date_match = re.search(pattern, file_content, re.IGNORECASE)
+            if date_match:
+                try:
+                    due_date_full = date_match.group(1).strip()
+                    print(f"  ✅ Extracted full due date: {due_date_full}")
+                    break
+                except Exception as e:
+                    print(f"  ❌ Error extracting full date: {e}")
+                    continue
+    
+        if due_date_full == "Date not specified":
+            print(f"  ⚠️ No full due date found")
+    
+        return due_date_full
+
+    def extract_clean_skills(self, raw_content):
+        """Extract skills WITHOUT extra dashes - clean format"""
+        skills = []
+        
+        # First try to extract the skills table section
+        table_patterns = [
+            r'Years\s*\|\s*Required/Preferred\s*\|\s*Experience(.*?)(?=III\.|IV\.|WORK HOURS|TERMS OF SERVICE|$)',
+            r'Minimum Requirements:(.*?)(?=III\.|IV\.|WORK HOURS|TERMS OF SERVICE|$)',
+        ]
+        
+        for table_pattern in table_patterns:
+            table_match = re.search(table_pattern, raw_content, re.IGNORECASE | re.DOTALL)
+            if table_match:
+                table_content = table_match.group(1)
+                print(f"    📊 Found skills table: {len(table_content)} chars")
+                
+                # Extract skills WITHOUT adding dashes
+                skill_patterns = [
+                    r'(\d+)\s*\|\s*(Required|Preferred)\s*\|\s*(.+?)(?=\n\d+\s*\||\n\n|\nIII\.|\nIV\.|$)',
+                    r'(\d+)\s*(Required|Preferred)\s*(.+?)(?=\n\d+\s*|\n\n|\nIII\.|\nIV\.|$)',
+                ]
+                
+                for skill_pattern in skill_patterns:
+                    skill_rows = re.findall(skill_pattern, table_content, re.IGNORECASE | re.DOTALL)
+                    if skill_rows:
+                        for years, req_type, description in skill_rows:
+                            # Clean up but DON'T add dashes
+                            description = description.strip()
+                            description = re.sub(r'\s+', ' ', description)
+                            description = re.sub(r'^\|\s*', '', description)
+                            
+                            # NO DASH - clean format
+                            skill_text = f"{years} Years {req_type} {description}"
+                            skills.append(skill_text)
+                            print(f"    ✅ Extracted CLEAN skill: {skill_text[:80]}...")
+                        break
+                
+                if skills:
+                    break
+        
+        return skills
+
+    def extract_complete_description(self, raw_content):
+        """Extract complete description with PROPER LINE BREAKS preserved - ONLY after periods"""
+        description = ""
+        
+        for pattern in self.patterns['description_section']:
+            match = re.search(pattern, raw_content, re.IGNORECASE | re.DOTALL)
+            if match:
+                description_content = match.group(1).strip()
+                print(f"    📝 Found description section: {len(description_content)} chars")
+                
+                # PRESERVE ORIGINAL LINE BREAKS - don't compress into single line
+                # Only clean up excessive spaces within lines, keep paragraph breaks
+                description_content = re.sub(r'[ \t]+', ' ', description_content)  # Clean multiple spaces within lines
+                description_content = re.sub(r'\n[ \t]+\n', '\n\n', description_content)  # Preserve paragraph breaks
+                
+                # Extract all parts of the description with proper formatting
+                description_parts = []
+                
+                # Level Description - preserve line breaks
+                level_match = re.search(r'Level Description(.*?)(?=Job Description|Additional job details|$)', description_content, re.IGNORECASE | re.DOTALL)
+                if level_match:
+                    level_desc = level_match.group(1).strip()
+                    level_desc = re.sub(r'[ \t]+', ' ', level_desc)  # Clean spaces but keep line breaks
+                    description_parts.append(f"LEVEL DESCRIPTION:\n{level_desc}")
+                
+                # Job Description - preserve line breaks
+                job_match = re.search(r'Job Description(.*?)(?=Additional job details|$)', description_content, re.IGNORECASE | re.DOTALL)
+                if job_match:
+                    job_desc = job_match.group(1).strip()
+                    job_desc = re.sub(r'[ \t]+', ' ', job_desc)  # Clean spaces but keep line breaks
+                    description_parts.append(f"JOB DESCRIPTION:\n{job_desc}")
+                
+                # Additional details - preserve line breaks
+                additional_match = re.search(r'Additional job details and special considerations(.*?)(?=$)', description_content, re.IGNORECASE | re.DOTALL)
+                if additional_match:
+                    additional_desc = additional_match.group(1).strip()
+                    additional_desc = re.sub(r'[ \t]+', ' ', additional_desc)  # Clean spaces but keep line breaks
+                    description_parts.append(f"ADDITIONAL DETAILS:\n{additional_desc}")
+                
+                # If no structured parts, use the whole content but preserve formatting
+                if not description_parts:
+                    # Remove the initial repetitive parts but keep line breaks
+                    clean_content = re.sub(r'Texas Health and Human Services Commission\s+requires the services of\s+\d+\s+[^,]+,', '', description_content)
+                    clean_content = re.sub(r'hereafter referred to as.*?All work products', 'All work products', clean_content, flags=re.DOTALL)
+                    clean_content = clean_content.strip()
+                    clean_content = re.sub(r'[ \t]+', ' ', clean_content)  # Clean spaces but keep line breaks
+                    description_parts.append(clean_content)
+                
+                # Join with proper spacing between sections
+                description = '\n\n'.join(description_parts)
+                
+                # FINAL CLEANUP: Add line breaks ONLY after periods (.)
+                # This ensures sentences are properly separated
+                description = re.sub(r'\.\s+', '.\n', description)  # Add line break after periods
+                
+                # Remove excessive blank lines but keep single blank lines between paragraphs
+                description = re.sub(r'\n\s*\n\s*\n+', '\n\n', description)
+                
+                print(f"    ✅ Extracted complete description with period-based line breaks: {len(description)} chars")
+                break
+        
+        return description
+
+    def create_regex_extracted_content(self, extracted_data, filename):
+        """Create COMPLETE file content with ONLY regex-extracted data"""
+
+        # DEBUG: Print what's in extracted_data
+        print(f"  🐛 DEBUG - extracted_data keys: {list(extracted_data.keys())}")
+        print(f"  🐛 DEBUG - due_date_full: {extracted_data.get('due_date_full', 'NOT SET')}")
+        print(f"  🐛 DEBUG - response_deadline_mmdd: {extracted_data.get('response_deadline_mmdd', 'NOT SET')}")
+        
+        content = []
+        content.append("REGEX-EXTRACTED SOLICITATION DATA")
+        content.append("=" * 60)
+        content.append("")
+        
+        content.append("EXTRACTED DATA:")
+        content.append("-" * 40)
+        
+        if extracted_data.get('solicitation_number'):
+            content.append(f"Response Number: {extracted_data['solicitation_number']}")
+        
+        if extracted_data.get('department'):
+            content.append(f"Department: {extracted_data['department']}")
+        
+        if extracted_data.get('bill_rate'):
+            content.append(f"NTE Rate: ${extracted_data['bill_rate']}")
+    
+        # FIXED DATE HANDLING - Check what we actually have
+        if extracted_data.get('due_date_full'):
+            if extracted_data['due_date_full'] != "Date not specified":
+                content.append(f"Response Deadline: {extracted_data['due_date_full']}")
+                print(f"  📅 Added Response Deadline to file: {extracted_data['due_date_full']}")
+            elif extracted_data.get('response_deadline_mmdd') and extracted_data['response_deadline_mmdd'] != "0000":
+               mmdd = extracted_data['response_deadline_mmdd']
+               # Convert MMDD to full date (assume current year)
+               month = mmdd[:2]
+               day = mmdd[2:]
+               current_year = datetime.now().year
+               content.append(f"Response Deadline: {month}/{day}/{current_year}")
+               print(f"  📅 Added Response Deadline to file: {month}/{day}/{current_year}")
+        elif extracted_data.get('response_deadline_mmdd') and extracted_data['response_deadline_mmdd'] != "0000":
+            # Fallback if due_date_full doesn't exist
+            mmdd = extracted_data['response_deadline_mmdd']
+            month = mmdd[:2]
+            day = mmdd[2:]
+            current_year = datetime.now().year
+            content.append(f"Response Deadline: {month}/{day}/{current_year}")
+            print(f"  📅 Added Response Deadline (fallback): {month}/{day}/{current_year}")
+        else:
+            print(f"  ⚠️ No due date found to add to file")
+        
+        if extracted_data.get('start_date'):
+            content.append(f"Start Date: {extracted_data['start_date']}")
+        
+        if extracted_data.get('end_date'):
+            content.append(f"End Date: {extracted_data['end_date']}")
+        
+        if extracted_data.get('work_arrangement'):
+            content.append(f"Work Arrangement: {extracted_data['work_arrangement']}")
+        else:
+            content.append("Work Arrangement: Not specified")
+        
+        location = extracted_data.get('work_location', 'Not specified')
+        content.append(f"Location: {location}")
+        
+        content.append(f"Positions: {extracted_data.get('positions', 'Unknown')}")
+        content.append("")
+        
+        # Use the CLEAN skills extraction (no dashes)
+        skills_list = self.extract_clean_skills(extracted_data.get('raw_content', ''))
+        if skills_list:
+            content.append("SKILLS:")
+            content.append("-" * 30)
+            for skill in skills_list:
+                content.append(f"    {skill}")
+            content.append("")
+        
+        # Use the COMPLETE description extraction with period-based line breaks
+        complete_description = self.extract_complete_description(extracted_data.get('raw_content', ''))
+        if complete_description:
+            content.append("DESCRIPTION:")
+            content.append("-" * 30)
+            if len(complete_description) > 2500:
+                complete_description = complete_description[:2500] + "... [truncated]"
+            # Add the description content AS-IS with preserved line breaks
+            content.append(complete_description)
+            content.append("")
+        
+        content.append("=" * 60)
+        content.append("END EXTRACTED DATA")
+        
+        return '\n'.join(content)
+    
+def extract_data_with_regex():
+    """STEP: Extract core data with regex and REPLACE file content"""
+    print("\n" + "="*70)
+    print("STEP: REGEX DATA EXTRACTION & REPLACEMENT")
+    print("="*70)
+    
+    output_dir = "hhsc_portal_outputs"
+    if not os.path.exists(output_dir):
+        print("❌ No output directory found")
+        return 0
+    
+    extractor = RegexDataExtractor()
+    processed_count = 0
+    
+    for filename in os.listdir(output_dir):
+        if filename.startswith("Solicitation_Response_Number_") and filename.endswith(".txt"):
+            try:
+                filepath = os.path.join(output_dir, filename)
+                
+                with open(filepath, 'r', encoding='utf-8') as f:
+                    original_content = f.read()
+                
+                print(f"\n📄 Regex Processing: {filename}")
+                print(f"   Original scraped content: {len(original_content)} chars")
+                
+                extracted_data = extractor.extract_core_data(original_content, filename)
+                extracted_data['raw_content'] = original_content
+                
+                regex_content = extractor.create_regex_extracted_content(extracted_data, filename)
+                
+                with open(filepath, 'w', encoding='utf-8') as f:
+                    f.write(regex_content)
+                
+                processed_count += 1
+                print(f"✅ REPLACED with regex content: {len(regex_content)} chars")
+                print(f"   Content reduced by: {len(original_content) - len(regex_content)} chars")
+                
+            except Exception as e:
+                print(f"❌ Error in regex extraction: {str(e)}")
+                import traceback
+                traceback.print_exc()
+    
+    print(f"\n🎉 REGEX EXTRACTION COMPLETED: {processed_count} files REPLACED")
+    return processed_count
+
 # ===== LLM CLASSES =====
+# ===== UPDATED LLM CLASSES TO USE REGEX-EXTRACTED DATA =====
 
 class PureLLMRequisitionProcessor:
     def __init__(self, api_key, model):
@@ -273,65 +700,13 @@ class PureLLMRequisitionProcessor:
         self.max_retries = 3
         self.retry_delay = 2
 
-
-
-    def fix_llm_output(self, llm_output, file_content):
-        """Fix LLM output by ALWAYS replacing Job ID with correct values"""
-        print("  🔧 Force-correcting Job ID with lowest rate...")
-        
-        # Extract ALL bill rates and use the LOWEST one
-        nte_patterns = [
-            r'NTE Rate:\$(\d+)\.?\d*',
-            r'NTE Rate\s*\$(\d+)\.?\d*',
-            r'Not.to.Exceed.*?\$(\d+)\.?\d*',
-            r'NTE.*?\$(\d+)\.?\d*',
-            r'NOT TO EXCEED.*?\$(\d+)\.?\d*',
-            r'Not to Exceed.*?\$(\d+)\.?\d*',
-            r'Hourly Rate.*?\$(\d+)\.?\d*',
-        ]
-        
-        all_nte_rates = []
-        for pattern in nte_patterns:
-            matches = re.findall(pattern, file_content, re.IGNORECASE)
-            if matches:
-                all_nte_rates.extend(matches)
-        
-        if all_nte_rates:
-            bill_rates = [int(rate) for rate in all_nte_rates]
-            bill_rate = str(min(bill_rates))
-            print(f"  ✅ Using LOWEST BILL_RATE: {bill_rate} (from {len(all_nte_rates)} rates)")
-        else:
-            bill_rate = "000"
-        
-        # Extract date
-        date_match = re.search(r'received by\s*(\d{1,2})/(\d{1,2})/\d{4}', file_content)
-        date_mmdd = date_match.group(1).zfill(2) + date_match.group(2).zfill(2) if date_match else "0000"
-        
-        # Extract requisition number from LLM output
-        req_match = re.search(r'Job ID: TX-([^\(]+)', llm_output)
-        requisition_number = req_match.group(1) if req_match else "unknown"
-        
-        # ALWAYS replace the entire Job ID line
-        correct_job_id = f"Job ID: TX-{requisition_number}(9{bill_rate}9{date_mmdd})"
-        
-        # Replace the Job ID line in the output
-        lines = llm_output.split('\n')
-        for i, line in enumerate(lines):
-            if line.startswith('Job ID:'):
-                lines[i] = correct_job_id
-                print(f"  ✅ FORCE-REPLACED Job ID: {correct_job_id}")
-                break
-        
-        fixed_output = '\n'.join(lines)
-        return fixed_output
-
     def make_llm_call(self, prompt, system_message, max_tokens=4000, timeout=45):
         """Make a pure LLM call with better error handling"""
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json"
         }
-        
+           
         if len(prompt) > 28000:
             prompt = prompt[:28000] + "... [content truncated]"
         
@@ -379,40 +754,29 @@ class PureLLMRequisitionProcessor:
             
         return None
 
-    def extract_all_data_pure_llm(self, file_content, filename):
-        """Use pure LLM to extract all data from solicitation response"""
-
-
-        # Extract requisition number from filename FIRST (more reliable)
+    def extract_data_from_regex_content(self, regex_content, filename):
+        """Extract data from regex-extracted content instead of raw scraped content"""
+        print("  🔍 Using regex-extracted data for LLM processing...")
+        
+        # Extract requisition number from filename
         requisition_number = "unknown"
-    
-        print(f"  🔍 Analyzing filename: '{filename}'")
-    
-        # Handle different possible filename patterns
         try:
-            # Remove .txt extension first
             clean_name = filename.replace(".txt", "")
-            print(f"  🔍 After removing .txt: '{clean_name}'")
-        
-            # List of prefixes to remove (everything before the actual number)
             prefixes_to_remove = [
-               "Solicitation_Reference_Number_",
-               "SolicitationReferenceNumber_", 
-               "solicitation_reference_number_",
-               "Reference_Number_",
-               "Response_Number_",  # Add this one
-               "Solicitation_",
-               "Response_"
+                "Solicitation_Reference_Number_",
+                "SolicitationReferenceNumber_", 
+                "solicitation_reference_number_",
+                "Reference_Number_",
+                "Response_Number_",
+                "Solicitation_",
+                "Response_"
             ]
-        
-           # Remove ALL prefixes to get just the number
+            
             temp_number = clean_name
             for prefix in prefixes_to_remove:
                 if prefix in temp_number:
                    temp_number = temp_number.replace(prefix, "")
-                   print(f"  🔍 After removing '{prefix}': '{temp_number}'")
-        
-           # Use the cleaned number
+            
             requisition_number = temp_number
             print(f"  ✅ Final extracted number: {requisition_number}")
                 
@@ -420,154 +784,224 @@ class PureLLMRequisitionProcessor:
             print(f"  ❌ Error extracting from filename: {e}")
             requisition_number = "unknown"
 
-        print(f"  📋 Final extracted requisition number: {requisition_number}")
-    
-        # TRUNCATE CONTENT to avoid "Request too large" errors
-        if len(file_content) > 19000:
-           print(f"  ⚠️ Content too large ({len(file_content)} chars), truncating to 19000 chars...")
-           # Try to keep the most important sections
-           important_sections = []
-        
-           # Look for key sections in order of importance
-           sections_to_find = [
-               "I. DESCRIPTION OF SERVICES",
-               "II. CANDIDATE SKILLS AND QUALIFICATIONS", 
-               "Working Title:",
-               "NTE Rate:",
-               "VIII. RESPONSE DEADLINE",
-               "IV. WORK HOURS AND LOCATION",
-               "III. TERMS OF SERVICE",
-               "X. RESPONSE FORMAT",
-               "Solicitation Reference Number:"
-            ]
-
-
-           # Calculate how much content we can give each section
-           sections_count = len([s for s in sections_to_find if s in file_content])
-           if sections_count > 0:
-               chunk_size = min(2000, 19000 // sections_count)  # Dynamic chunk size
-           else:
-                chunk_size = 2000
-   
-           print(f"  📊 Giving ~{chunk_size} chars to each of {sections_count} sections") 
-        
-           for section in sections_to_find:
-               if section in file_content:
-                  start_idx = file_content.find(section)
-                  # USE THE CALCULATED CHUNK SIZE
-                  end_idx = file_content.find("\n\n", start_idx + chunk_size)
-                  if end_idx == -1:
-                     end_idx = min(start_idx + chunk_size + 500, len(file_content))
-                  section_content = file_content[start_idx:end_idx]
-                  important_sections.append(section_content)
-                  print(f"  ✅ Captured {section} - {len(section_content)} chars")
-        
-           if important_sections:
-              file_content = "\n\n".join(important_sections)
-              if len(file_content) > 19000:
-                  file_content = file_content[:19000]
-              print(f"  ✅ Extracted key sections, new length: {len(file_content)} chars")
-           else:
-               # Fallback: just take first 19000 chars
-               file_content = file_content[:19000]
-               print(f"  ✅ Truncated to first 19000 chars")
-
-
-        # EXTRACT BILL_RATE AND DATE FIRST (before prompt)
-        print("  🔍 Extracting bill_rate and date from document...")
+        # Extract data from regex content
         bill_rate = "000"
         date_mmdd = "0000"
-        
-        # Extract ALL bill rates from NTE Rate patterns and use the LOWEST one
-        nte_matches = re.findall(r'NTE Rate:\$(\d+)\.?\d*', file_content)
-        if nte_matches:
-            # Convert to integers and find the lowest
-            bill_rates = [int(rate) for rate in nte_matches]
-            lowest_rate = min(bill_rates)
-            bill_rate = str(lowest_rate)
-            print(f"  ✅ Found {len(nte_matches)} NTE rates: {nte_matches}")
-            print(f"  ✅ Using LOWEST BILL_RATE: {bill_rate}")
+        due_date_full = "Date not specified"
+        location = "Not specified"
+        duration = "Unknown"
+        positions = "Unknown"
+        skills_section = ""
+        description_section = ""
+        work_arrangement = "Not specified"
+
+        # Extract bill rate from regex content
+        bill_rate_match = re.search(r'NTE Rate:\s*\$\s*(\d+)', regex_content)
+        if bill_rate_match:
+            bill_rate = bill_rate_match.group(1)
+            print(f"  ✅ Extracted bill rate: {bill_rate}")
+
+        # Extract date from regex-extracted content
+        print("  🔍 Extracting due date from regex content...")
+
+        # Method 1: Look for "Response Deadline:" line
+        if "Response Deadline:" in regex_content:
+           lines = regex_content.split('\n')
+           for line in lines:
+               if line.startswith('Response Deadline:'):
+                    date_part = line.replace('Response Deadline:', '').strip()
+                    print(f"  ✅ Found Response Deadline line: {date_part}")
+            
+                    # Extract date from the line
+                    date_match = re.search(r'(\d{1,2})/(\d{1,2})/(\d{4})', date_part)
+                    if date_match:
+                        month = date_match.group(1).zfill(2)
+                        day = date_match.group(2).zfill(2)
+                        year = date_match.group(3)
+                
+                        date_mmdd = month + day
+                        due_date_full = f"{month}/{day}/{year}"
+                        print(f"  ✅ Extracted date: {due_date_full}, MMDD: {date_mmdd}")
+                        break
+                    else:
+                        print(f"  ❌ Could not parse date from: {date_part}")
+                        date_mmdd = "0000"
+                        due_date_full = "Date not specified"
+                        break
         else:
-            print(f"  ⚠️ No NTE Rate found, using default: {bill_rate}")
+            print(f"  ❌ No Response Deadline line found")
+            date_mmdd = "0000"
+            due_date_full = "Date not specified"
+
+        # Extract location from regex content
+        location_match = re.search(r'Location:\s*([^\n]+)', regex_content)
+        if location_match:
+            location = location_match.group(1)
+            print(f"  ✅ Extracted location: {location}")
+
+        # Extract work arrangement from regex content
+        work_arrangement_match = re.search(r'Work Arrangement:\s*([^\n]+)', regex_content)
+        if work_arrangement_match:
+            work_arrangement = work_arrangement_match.group(1)
+            print(f"  ✅ Extracted work arrangement: {work_arrangement}")
+
+        # Extract positions from regex content
+        positions_match = re.search(r'Positions:\s*(\d+)', regex_content)
+        if positions_match:
+            positions = positions_match.group(1)
+            print(f"  ✅ Extracted positions: {positions}")
+
+        # Extract duration from regex content (calculate from dates)
+        start_date_match = re.search(r'Start Date:\s*(\d{1,2}/\d{1,2}/\d{4})', regex_content)
+        end_date_match = re.search(r'End Date:\s*(\d{1,2}/\d{1,2}/\d{4})', regex_content)
         
-        # Extract date from response deadline
-        date_match = re.search(r'received by\s*(\d{1,2})/(\d{1,2})/\d{4}', file_content)
-        if date_match:
-            date_mmdd = date_match.group(1).zfill(2) + date_match.group(2).zfill(2)
-            print(f"  ✅ Extracted DATE: {date_mmdd}")
+        if start_date_match and end_date_match:
+            start_date = datetime.strptime(start_date_match.group(1), '%m/%d/%Y')
+            end_date = datetime.strptime(end_date_match.group(1), '%m/%d/%Y')
+            months = (end_date.year - start_date.year) * 12 + (end_date.month - start_date.month)
+            duration = f"{months} months"
+            print(f"  ✅ Calculated duration: {duration}")
+
+        # Extract skills section - REMOVE SEPARATOR LINES
+        skills_start = regex_content.find("SKILLS:")
+        description_start = regex_content.find("DESCRIPTION:")
+
+        if skills_start != -1 and description_start != -1:
+            skills_section = regex_content[skills_start:description_start].strip()
+            print(f"  ✅ Extracted skills section: {len(skills_section)} chars")  
+            # Remove separator lines (like "------------------------------")
+            # Split into lines and filter out separator lines
+            skills_lines = skills_section.split('\n')
+            cleaned_skills_lines = []
+            for line in skills_lines:
+                # Skip lines that are just hyphens/dashes (separator lines)
+                line_stripped = line.strip()
+                if line_stripped and not re.match(r'^[-=]+$', line_stripped):
+                   cleaned_skills_lines.append(line)
+        
+            skills_section = '\n'.join(cleaned_skills_lines)
+            print(f"  ✅ Cleaned skills section (removed separators): {len(skills_section)} chars")
+
+        # Extract description section - REMOVE SEPARATOR LINES
+        if description_start != -1:
+           description_section = regex_content[description_start:].strip()
+           # Find the end of description (before "END EXTRACTED DATA")
+           end_marker = description_section.find("END EXTRACTED DATA")
+           if end_marker != -1:
+              description_section = description_section[:end_marker].strip()
+           print(f"  ✅ Extracted description section: {len(description_section)} chars")
+        
+           # Remove separator lines (like "------------------------------")
+           # Split into lines and filter out separator lines
+           desc_lines = description_section.split('\n')
+           cleaned_desc_lines = []
+           for line in desc_lines:
+               # Skip lines that are just hyphens/dashes (separator lines)
+               line_stripped = line.strip()
+               if line_stripped and not re.match(r'^[-=]+$', line_stripped):
+                  cleaned_desc_lines.append(line)
+        
+           description_section = '\n'.join(cleaned_desc_lines)
+           print(f"  ✅ Cleaned description section (removed separators): {len(description_section)} chars")
+
+        return {
+            'requisition_number': requisition_number,
+            'bill_rate': bill_rate,
+            'date_mmdd': date_mmdd,
+            'due_date_full': due_date_full,
+            'location': location,
+            'duration': duration,
+            'positions': positions,
+            'skills_section': skills_section,
+            'description_section': description_section,
+            'work_arrangement': work_arrangement
+        }
+
+    def extract_all_data_pure_llm(self, regex_content, filename):
+        """Use pure LLM to extract data from REGEX-EXTRACTED content"""
+        
+        # First extract all data from regex content
+        extracted_data = self.extract_data_from_regex_content(regex_content, filename)
+        
+        requisition_number = extracted_data['requisition_number']
+        bill_rate = extracted_data['bill_rate']
+        date_mmdd = extracted_data['date_mmdd']
+        location = extracted_data['location']
+        duration = extracted_data['duration']
+        positions = extracted_data['positions']
+        skills_section = extracted_data['skills_section']
+        description_section = extracted_data['description_section']
+        work_arrangement = extracted_data['work_arrangement']
+
+        print(f"  📋 Using pre-extracted data:")
+        print(f"    - Requisition: {requisition_number}")
+        print(f"    - Bill Rate: {bill_rate}")
+        print(f"    - Date: {date_mmdd}")
+        print(f"    - Location: {location}")
+        print(f"    - Duration: {duration}")
+        print(f"    - Positions: {positions}")
+        print(f"    - Skills: {len(skills_section)} chars")
+        print(f"    - Description: {len(description_section)} chars")
+        print(f"    - Work Arrangement: {work_arrangement}")
 
         system_message = """You are an expert document analyst specialized in Texas government solicitations. 
-        Extract the requested information precisely from the provided document sections. 
         Format the output exactly as specified without any additional commentary or explanations.
-        Be thorough in extracting all skills and the complete description from the specified sections.
-        Extract ALL requested information PRECISELY from the document content. 
-        CRITICAL: You MUST extract actual values for BILL_RATE and DATE from the document - never use placeholders.
-        Format the output exactly as specified without any additional commentary.
+        Use the provided pre-extracted data to create the final formatted output.
 
-        
         CRITICAL OUTPUT FORMATTING RULES:
-        - For Job ID: Format MUST be exactly: TX-{requisition_number} (9BILL_RATE9DATE)
-        - Apply universal description spacing rules to the description content
+        - For Job ID: Format MUST be exactly: TX-{requisition_number} (9{bill_rate}9{date_mmdd})
         - Return output in exactly the specified format with no additional text"""
 
         prompt = f"""
-        Please analyze this Texas department solicitation document and extract the following specific information:
+        Please format the following pre-extracted solicitation data into the required output format:
 
-    DOCUMENT CONTENT:
-    {file_content}
+    PRE-EXTRACTED DATA:
+    - Response Number: {requisition_number}
+    - NTE Rate: ${bill_rate}
+    - Response Deadline: {date_mmdd}
+    - Location: {location}
+    - Duration: {duration}
+    - Positions: {positions}
+    - Work Arrangement: {work_arrangement}
 
-    EXTRACTION REQUIREMENTS:
+    SKILLS SECTION:
+    {skills_section}
 
-    1. SKILLS: Extract ALL skills and qualifications from "II. CANDIDATE SKILLS AND QUALIFICATIONS" section.
-       - Format as bullet points
-       - Include years of experience and requirement type (Required/Preferred)
-       - Remove all leading "-" dashes, keep content
-       - Format as bullet points WITHOUT using "-" dashes
-       - Example: "8 Years Required - Web Technologies: Basic to intermediate knowledge of JavaScript, HTML, and CSS for front-end development"
+    DESCRIPTION SECTION:
+    {description_section}
 
-    2. JOB ID CONSTRUCTION:
-       - Base: TX-{requisition_number}
-       - BILL_RATE:{bill_rate}   # This should be the lowest rate
-       - DATE:  {date_mmdd}
-      
-   
- 
-    3. LOCATION: Extract the primary work location from "IV. WORK HOURS AND LOCATION" section.
-       - Find "The primary work location(s) will be at" and extract the address
+    OUTPUT FORMAT - RETURN EXACTLY IN THIS FORMAT WITH NO ADDITIONAL TEXT:
+
+    Job ID: TX-{requisition_number} (9{bill_rate}9{date_mmdd})
+    Location: {location}
        - Format as: "City, State (Department Abbreviation)"
        - Take department abbreviation from the full name and convert it into short form by taking each word first letter
        - Example: "Lamar Boulevard, TX (OCCC)"
-       - For this location if they mention WFH then go for Austin don't use WFH 
+       - For this location if they mention WFH then go for Austin don't use WFH
+    Duration: {duration}
+    Positions: {positions}
 
-    4. DURATION: Calculate the duration from "III. TERMS OF SERVICE" section.
-       - Find start and end dates: "Services are expected to start [date] and are expected to complete by [date]"
-       - Count the number of months between the dates
-       - Format as: "X months"
-       - CRITICAL EXAMPLES:
-        * 09/01/2025 to 06/31/2026 = 10 months
-        * 10/01/2025 to 08/31/2026 = 11 months
-        * 01/01/2025 to 12/31/2025 = 12 months
-        * 03/01/2025 to 02/28/2026 = 12 months
+    {skills_section}
 
-    5. POSITIONS: Extract the number of candidate submissions allowed from "X. RESPONSE FORMAT" section.
-       - Look for "Vendor may submit no more than X candidate resume(s) for this job."
-       - Extract only the number of candidates
-       - Example: "5"
+    {description_section}
 
-    6. DESCRIPTION: Extract the complete job description from "I. DESCRIPTION OF SERVICES" section.
-       - Start from "All work products resulting from the project shall be considered..." 
-       - Include all technical details and responsibilities
-       - Exclude the first paragraph about general requirements
-   
-     UNIVERSAL DESCRIPTION SPACING RULES:
+    IMPORTANT: 
+    - Use the EXACT data provided above
+    - Do NOT modify the Job ID format
+    - Do NOT add any additional text or explanations
+    - Keep the skills and description exactly as provided
+    - Output must match the exact format above
+    UNIVERSAL DESCRIPTION SPACING RULES:
+     - Exclude the first paragraph about general requirements
      - IDENTIFY ALL section headers in the description using these rules:
        * Lines ending with ":" that are NOT continuations of sentences
        * Lines that are clearly section titles (standalone, not part of paragraphs)
-       * Lines containing typical header words (Responsibilities, Qualifications, Requirements, Skills, Experience, Education, Duties, Overview, etc.)
+       * Lines containing typical header words (Responsibilities, Qualifications, Requirements, Skills, Experience, Education, Duties, Overview,ADDITIONAL DETAILS etc.)
        * Lines that are formatted as headers (ALL CAPS, bold, underlined, or visually distinct)
        * FOR EACH SECTION HEADER: Insert exactly ONE blank line BEFORE the header
        * NO blank line AFTER the header - content should start immediately on the next line
        * REMOVE ALL other blank lines from the entire description
+       * AFTER EACH PERIOD (.), START THE NEXT SENTENCE ON A NEW LINE WITHOUT ADDING ANY BLANK LINES
 
      HEADER DETECTION EXAMPLES:
      ✓ "RESPONSIBILITIES:" (header - add blank line before)
@@ -578,104 +1012,12 @@ class PureLLMRequisitionProcessor:
 
      FINAL RESULT MUST HAVE:
      - One blank line before each section
-     
-     EXTRACTION EXAMPLES (for guidance only - use actual document values): 
-     - 1201 Brazos Street, Austin, TX 78701 → Austin, TX (TSLAC)
-
-
-    IMPORTANT: DO NOT copy the placeholder text "(9ACTUAL_BILL_RATE9ACTUAL_DATE)" - you MUST replace ACTUAL_BILL_RATE and ACTUAL_DATE with the actual extracted numbers. 
-    Format: 9 + bill_rate + 9 + date (NO SPACES)
-
-
-    OUTPUT FORMAT - RETURN EXACTLY IN THIS FORMAT WITH NO ADDITIONAL TEXT:
-
-   Job ID: TX-{requisition_number} (9{bill_rate}9{date_mmdd})
-    Location: [City, State (Department)]
-    Duration: [X months]
-    Positions: [number only]
-
-    Skills:
-        [ point 1]
-        [ point 2]
-        [ point 3]
-     
-    Description:
-    [description content with proper spacing]
-
-    IMPORTANT: Use the Job ID exactly as provided above. Do not extract or change the bill rate or date.
-
-    IMPORTANT EXTRACTION RULES:
-     - LOCATION: Find "The primary work location(s) will be at" and extract address
-     - For this location if they mention WFH then go for Austin don't use WFH 
-     - DURATION: Calculate months between start and end dates
-     - Use ONLY values found in this specific document
-     - DO NOT copy examples - EXTRACT actual values
-     - DO NOT use generic placeholders - USE REAL EXTRACTED VALUES
-
-    CRITICAL: 
-    - Response Number is FIXED: {requisition_number} (from filename)
-    - Replace [CITY], [STATE], [DEPT] with ACTUAL location from this document
-    - Replace [MONTHS] with ACTUAL calculated duration from this document
-    - Replace [NUMBER] with ACTUAL positions number from this document
-    - Replace [SKILLS_LIST] with ACTUAL skills from this document
-    - SKILLS: Remove all leading "-" dashes, keep content
-    - Replace [DESCRIPTION_TEXT] with ACTUAL description from this document
-    - If multiple bill rates found, use the LOWEST number
-    - bill_rate can be 2 OR 3 digits (use provided value as-is)
-    - date MUST be exactly 4 digits (use provided value)  
-
-    DO NOT use any example values - every field must come from THIS document content above.
     """
-
-
-
-        # ADD THIS DEBUGGING BEFORE MAKING THE LLM CALL
-        print(f"  🔍 DEBUGGING CONTENT ANALYSIS:")
-        print(f"  ===========================================") 
-        # Check if critical sections exist in the content
-        critical_sections = {
-               "NTE Rate": "NTE Rate:",
-               "Section VIII": "VIII. RESPONSE DEADLINE", 
-        }
-        for section_name, section_pattern in critical_sections.items():
-            if section_pattern in file_content:
-              start_idx = file_content.find(section_pattern)
-              snippet = file_content[start_idx:start_idx+200].replace('\n', ' ')
-              print(f"  ✅ {section_name} FOUND: {snippet[:100]}...")
-            else:
-             print(f"  ❌ {section_name} NOT FOUND")
-
-        # Specifically check for NTE Rate pattern
-        print(f"  🔍 Checking NTE Rate patterns:")
-        nte_patterns = ["NTE Rate:", "NTE Rate", "Not-to-Exceed Rate:"]
-        for pattern in nte_patterns:
-           if pattern in file_content:
-              nte_pos = file_content.find(pattern)
-              nte_context = file_content[nte_pos:nte_pos+100]
-              print(f"  ✅ Found '{pattern}': {nte_context}")   
-
-
-        # Specifically check for Response Deadline
-        if "RESPONSE DEADLINE" in file_content:
-            deadline_pos = file_content.find("RESPONSE DEADLINE")
-            deadline_context = file_content[deadline_pos:deadline_pos+300]
-            print(f"  ✅ Response Deadline context: {deadline_context}")
-        else:
-            print(f"  ❌ No RESPONSE DEADLINE found")
-
-        print(f"  ===========================================")
-        print(f"  📋 Sending {len(file_content)} chars to LLM")
-        print(f"  ===========================================")        
+        print(f"  📋 Sending {len(prompt)} chars to LLM for formatting...")
 
         result = self.make_llm_call(prompt, system_message, max_tokens=4000, timeout=60)
 
-        # Apply fix if we got a result (as backup)
-        if result and "LLM extraction failed" not in result:
-            print("  🔧 Applying post-processing fix to LLM output...")
-            result = self.fix_llm_output(result, file_content)
-
         return result if result else "LLM extraction failed"
-
 
 class RequisitionTitleGenerator:
     def __init__(self, api_key, model):
@@ -736,101 +1078,33 @@ class RequisitionTitleGenerator:
             
         return None
 
-    def generate_title(self, requisition_content: str) -> str:
-        """Generate title with strict technical skill extraction"""
-        print("  🔍 Extracting skills section for title generation...")
+    def generate_title_from_regex_content(self, regex_content):
+        """Generate title using data from regex-extracted content"""
+        print("  🔍 Generating title from regex-extracted data...")
 
-        # Step 1: Extract skills section from the file - MULTIPLE PATTERNS
+        # Extract work arrangement from regex content
+        work_arrangement = "Onsite"  # default
+        work_arrangement_match = re.search(r'Work Arrangement:\s*([^\n]+)', regex_content)
+        if work_arrangement_match:
+            work_arrangement_text = work_arrangement_match.group(1)
+            if "Hybrid" in work_arrangement_text:
+                work_arrangement = "Hybrid"
+            elif "Remote" in work_arrangement_text or "Telework" in work_arrangement_text:
+                work_arrangement = "Remote"
+            elif "Onsite" in work_arrangement_text or "On Site" in work_arrangement_text:
+                work_arrangement = "Onsite"
+        
+        print(f"  ✅ Extracted work arrangement: {work_arrangement}")
+
+        # Extract skills from regex content
         skills_section = ""
-    
-        # Try multiple patterns for skills section
-        skill_patterns = [
-             "II. CANDIDATE SKILLS AND QUALIFICATIONS",
-             "CANDIDATE SKILLS AND QUALIFICATIONS", 
-             "II CANDIDATE SKILLS AND QUALIFICATIONS",
-             "SKILLS AND QUALIFICATIONS",
-             "II. SKILLS AND QUALIFICATIONS",
-             "Minimum Requirements",
-             "REQUIRED SKILLS",
-             "QUALIFICATIONS"
-        ]
-    
-        for pattern in skill_patterns:
-            if pattern in requisition_content:
-                start_idx = requisition_content.find(pattern)
-                print(f"  ✅ Found skills section: '{pattern}'")
-            
-                # Extract until next major section or reasonable length
-                next_sections = [
-                   "III. TERMS OF SERVICE", "IV. WORK HOURS AND LOCATION",
-                   "III TERMS OF SERVICE", "IV WORK HOURS AND LOCATION", 
-                   "WORK HOURS", "TERMS OF SERVICE", "LOCATION"
-                ]
-            
-                end_idx = len(requisition_content)
-                for section in next_sections:
-                    section_idx = requisition_content.find(section, start_idx)
-                    if section_idx != -1:
-                        end_idx = min(end_idx, section_idx)
-            
-                # If no next section found, take next 2000 characters
-                if end_idx == len(requisition_content):
-                   end_idx = min(start_idx + 2000, len(requisition_content))
-            
-                skills_section = requisition_content[start_idx:end_idx]
-                print(f"  ✅ Extracted skills section: {len(skills_section)} characters")
-                break
-    
-        if not skills_section:
-            print("  ❌ No skills section found in file - searching for any skills content...")
-            # Fallback: look for any content that might contain skills
-            if "Years" in requisition_content and ("Required" in requisition_content or "Preferred" in requisition_content):
-                # Extract context around skills keywords
-                skills_keywords = ["Years", "Required", "Preferred", "Experience", "Skills"]
-                for keyword in skills_keywords:
-                    if keyword in requisition_content:
-                        idx = requisition_content.find(keyword)
-                        mstart_idx = max(0, idx - 100)
-                        end_idx = min(len(requisition_content), idx + 1000)
-                        skills_section = requisition_content[start_idx:end_idx]
-                        print(f"  ✅ Found skills-like content around '{keyword}': {len(skills_section)} characters")
-                        break
+        skills_start = regex_content.find("SKILLS:")
+        description_start = regex_content.find("DESCRIPTION:")
+        
+        if skills_start != -1 and description_start != -1:
+            skills_section = regex_content[skills_start:description_start].strip()
+            print(f"  ✅ Extracted skills for title: {len(skills_section)} chars")
 
-        if not skills_section:
-             print("  ❌ No skills content found at all")
-             return "Title generation failed - no skills found" 
-
-        # TRUNCATE content for title generation too
-        if len(requisition_content) > 8000:
-           print(f"  ⚠️ Content too large for title generation ({len(requisition_content)} chars), truncating...")
-           # Extract key sections for title generation
-           key_sections = []
-           title_sections = [
-                "Working Title:",
-                "II. CANDIDATE SKILLS AND QUALIFICATIONS",
-                "IV. WORK HOURS AND LOCATION", 
-                "I. DESCRIPTION OF SERVICES",
-                "V. OTHER SPECIAL REQUIREMENTS"
-            ]
-        
-           for section in title_sections:
-               if section in requisition_content:
-                  start_idx = requisition_content.find(section)
-                  end_idx = requisition_content.find("\n\n", start_idx + 300)
-                  if end_idx == -1:
-                     end_idx = min(start_idx + 500, len(requisition_content))
-                  section_content = requisition_content[start_idx:end_idx]
-                  key_sections.append(section_content)
-        
-           if key_sections:
-              requisition_content = "\n\n".join(key_sections)
-              if len(requisition_content) > 8000:
-                  requisition_content = requisition_content[:8000]
-              print(f"  ✅ Extracted key title sections, new length: {len(requisition_content)} chars")
-           else:
-               requisition_content = requisition_content[:8000]
-               print(f"  ✅ Truncated to first 8000 chars")
-        
         system_message = """STRICT RULES: 
 You are an expert job title classifier. Analyze the skills section and generate the most appropriate job title based ONLY on the technical skills found.
 1. OUTPUT EXACT FORMAT: [Work Arrangement]/Local [Job Title] (Experience+ Certifications) with [Technical Skills] experience
@@ -839,41 +1113,35 @@ You are an expert job title classifier. Analyze the skills section and generate 
 4. AFTER "with": ONLY technical skills, NO soft skills
 5. REMOVE any introductory text like "Based on the provided document" or "Here's the generated title:"
 6. VIOLATING THESE RULES IS NOT ACCEPTABLE
-7. REMOVE any "(Experience+)" or similar text from title """
+7. REMOVE any "(Experience+)" or similar text from title 
+8. Don't add certification word after the certification name only just give certifications name  e.g : BluePrism Certification -> BluePrism """
 
-        prompt = f"""ANALYZE THIS TEXAS SOLICITATION DOCUMENT AND GENERATE A TECHNICAL TITLE FOLLOWING STRICT FORMAT RULES:
+        prompt = f"""ANALYZE THIS SKILLS SECTION AND GENERATE A TECHNICAL TITLE FOLLOWING STRICT FORMAT RULES:
 
+WORK ARRANGEMENT: {work_arrangement}
 
-DOCUMENT CONTENT:
-{requisition_content}
 SKILLS SECTION:
 {skills_section}
 
 CRITICAL INSTRUCTIONS - MUST FOLLOW EXACTLY:
 
-1. WORK ARRANGEMENT: Extract from "IV. WORK HOURS AND LOCATION" section
-   - Look for "The working position is" and extract the work arrangement
-   - "Telework" = Remote
-   - "Remote" = Remote  
-   - "Hybrid - On Site and Telework" = Hybrid
-   - "On Site" = Onsite
-   - Default to "Onsite" if not specified
+1. WORK ARRANGEMENT: Use the provided work arrangement: {work_arrangement}
    - **ALWAYS FORMAT AS: [Work Arrangement]/Local**
 
 2. FORMAT: [Work Arrangement]/Local [Job Title] (Experience+ Certifications) with [Technical Skills] experience
 
-3. JOB TITLE: BASED ON SKILLS ANALYSIS - Generate job title by analyzing ALL technical skills from the skills section determine the most appropriate job title:
+3. JOB TITLE: BASED ON SKILLS ANALYSIS - Generate job title by analyzing ALL technical skills from the skills section:
 - Look at ALL technical skills and qualifications
 - Identify the primary role pattern (Data, Cloud, Business Analysis, Development, etc.)
 - Generate job title that matches the skills pattern  
 
 4. CERTIFICATIONS (IN PARENTHESES ONLY):
-   - ONLY include actual certification names from the document
+   - ONLY include actual certification names from the skills section
    - NEVER include experience descriptions, skills, or qualifications
    - If no certifications found, use: (Experience+)
 
 5. TECHNICAL SKILLS (AFTER "with" ONLY):
-   - EXTRACT ONLY TECHNICAL/TECHNOLOGY SKILLS from "II. CANDIDATE SKILLS AND QUALIFICATIONS"
+   - EXTRACT ONLY TECHNICAL/TECHNOLOGY SKILLS from the skills section
    - ABSOLUTELY NO SOFT SKILLS like communication, teamwork, leadership, etc.
    - ONLY: programming languages, frameworks, tools, platforms, systems, databases
 
@@ -883,11 +1151,6 @@ CRITICAL INSTRUCTIONS - MUST FOLLOW EXACTLY:
    - REMOVE any "(Experience+)" or similar text from title
 
 7. OUTPUT MUST BE EXACT FORMAT: [Work Arrangement]/Local [Job Title] (Experience+ Certifications) with [Technical Skills] experience
-Examples: Hybrid/Local Data Engineer (15+) with LangGraph, RAG DB, ETL/ELT, DW, CI/CD, Azure DevOps/Databricks, data governance/Microsoft Purview/Fabric/Unity Catalog, SSIS, Python, Spark, Power BI experience
-          Remote/Local Govt Healthcare BA/PM (15+) with vendor/contract management (must), APD, VMO, KPI, BPR, data analytics/health informatics/data mining implementation experience
-          Hybrid/Local Govt Data Engineer/Architect (must) (MS/Azure/15+) with SSIS, Parquet, DB2/SQL Server, data quality/security/conversion/Cleansing/Migration/governance, QA, and ETL/ELT experience
-
-
 
 NOW GENERATE THE TITLE FOLLOWING THESE STRICT RULES:"""
 
@@ -918,7 +1181,6 @@ NOW GENERATE THE TITLE FOLLOWING THESE STRICT RULES:"""
         print("  ❌ Failed to generate title from skills")    
         return "Title generation failed"
 
-
 def add_title_to_formatted_content(formatted_content, title):
     """Add the generated title to the formatted content below Job ID with proper spacing"""
     if not title or not formatted_content:
@@ -945,13 +1207,9 @@ def add_title_to_formatted_content(formatted_content, title):
     
     return '\n'.join(new_content)
 
-
-import os
-from dotenv import load_dotenv
-
 def process_files_with_llm():
-    """Process all files in hhsc_portal_outputs folder with LLM in the correct sequence"""
-    print("\n=== Starting LLM Processing ===")
+    """Process all files in hhsc_portal_outputs folder with LLM using REGEX-EXTRACTED data"""
+    print("\n=== Starting LLM Processing with Regex-Extracted Data ===")
     
     # Load environment variables from .env file
     load_dotenv()
@@ -964,16 +1222,16 @@ def process_files_with_llm():
         return
     
     processor = PureLLMRequisitionProcessor(
-        api_key=groq_api_key,  # Use the environment variable
+        api_key=groq_api_key,
         model="llama-3.1-8b-instant"
     )
     
     title_generator = RequisitionTitleGenerator(
-        api_key=groq_api_key,  # Use the same environment variable
+        api_key=groq_api_key,
         model="llama-3.1-8b-instant"
     )
     
-    # Get all solicitation files
+    # Get all solicitation files (these should now contain REGEX-EXTRACTED data)
     solicitation_files = []
     output_dir = "hhsc_portal_outputs"
     if os.path.exists(output_dir):
@@ -995,15 +1253,15 @@ def process_files_with_llm():
     for file_path in solicitation_files:
         file_name = os.path.basename(file_path)
         file_size = os.path.getsize(file_path)
-        print(f"Processing {file_name} with LLM...")
+        print(f"Processing {file_name} with LLM (using regex data)...")
         
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
-                original_content = f.read()
+                regex_content = f.read()  # This now contains REGEX-EXTRACTED data
             
-            # STEP 1: Generate title FIRST
-            print("  Step 1: Generating title...")
-            title = title_generator.generate_title(original_content)
+            # STEP 1: Generate title FIRST using regex data
+            print("  Step 1: Generating title from regex data...")
+            title = title_generator.generate_title_from_regex_content(regex_content)
             print(f"  📝 Generated Title: {title}")
 
             if not title or "failed" in title.lower():
@@ -1015,9 +1273,9 @@ def process_files_with_llm():
             print("  ⏳ Waiting 8 seconds before content formatting...")
             time.sleep(30)
             
-            # STEP 2: Format content SECOND (using the original content, not the title)
-            print("  Step 2: Formatting content...")
-            formatted_content = processor.extract_all_data_pure_llm(original_content, file_name)  # FIXED LINE
+            # STEP 2: Format content SECOND (using the regex-extracted content)
+            print("  Step 2: Formatting content from regex data...")
+            formatted_content = processor.extract_all_data_pure_llm(regex_content, file_name)
             
             if formatted_content and "failed" not in formatted_content.lower() and title and "failed" not in title.lower():
                 
@@ -1078,7 +1336,6 @@ def process_files_with_llm():
         print(f"   2. Increasing delays between requests")
         print(f"   3. Processing fewer files at once")
 
-
 # ===== ORIGINAL FUNCTIONS =====
 
 def auto_authenticate_primary_gmail():
@@ -1111,8 +1368,7 @@ def auto_authenticate_primary_gmail():
             print("Primary authentication successful! Token saved.")
         except Exception as e:
             print(f"Primary authentication failed: {e}")
-            raise
-   
+            raise  
     try:
         print("Building primary Gmail service...")
         gmail_service = build('gmail', 'v1', credentials=creds)
@@ -2195,8 +2451,7 @@ def process_docx_file(filepath):
                 
                 # Make sure we include the contact information
                 if section_end_index == i:
-                    section_end_index = i + 4  # Include contact info paragraphs
-                
+                    section_end_index = i + 4  # Include contact info paragraphs               
                 break
         
         if solicitation_contact_index == -1:
@@ -2219,8 +2474,7 @@ def process_docx_file(filepath):
                             break
                     
                     if section_end_index == i:
-                        section_end_index = i + 4
-                    
+                        section_end_index = i + 4                  
                     break
         
         if solicitation_contact_index == -1:
@@ -2719,6 +2973,11 @@ class SolicitationAutomation:
                 # Process documents
                 process_all_downloaded_documents()
                 
+                # REGEX EXTRACTION - ADDED BEFORE LLM PROCESSING
+                print(f"\n=== REGEX DATA EXTRACTION ===")
+                regex_processed = extract_data_with_regex()
+                print(f"✅ Regex extraction completed: {regex_processed} files processed")
+                
                 # LLM PROCESSING
                 print(f"\n=== LLM DATA PROCESSING ===")
                 process_files_with_llm()
@@ -2909,6 +3168,11 @@ def main():
         # Process all downloaded documents at the end
         if initial_processed > 0:
             process_all_downloaded_documents()
+            
+            # REGEX EXTRACTION - ADDED BEFORE LLM PROCESSING
+            print(f"\n=== REGEX DATA EXTRACTION ===")
+            regex_processed = extract_data_with_regex()
+            print(f"✅ Regex extraction completed: {regex_processed} files processed")
             
             # ADD LLM PROCESSING AFTER ALL PORTAL PROCESSING
             print(f"\n=== STARTING LLM DATA PROCESSING ===")

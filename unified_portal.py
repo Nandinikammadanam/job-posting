@@ -488,6 +488,28 @@ def run_suresh1_processing(send_email=False):
         import traceback
         traceback.print_exc()
         return {'status': 'error', 'error': str(e), 'portal': 'due_list'}
+    
+def run_odoo_integration():
+    """Run odoo.py for Odoo job posting integration - AFTER VMS/TEXAS"""
+    print("\n" + "=" * 70)
+    print("🏢 STARTING ODOO INTEGRATION")
+    print("=" * 70)
+    
+    try:
+        # IMPORT AND CALL JUST LIKE VMS1 AND RAM1
+        from odoo import process_job_files_from_folders
+        
+        print("🚀 Running odoo.py to post new job files to Odoo...")
+        process_job_files_from_folders()
+        
+        print("✅ Odoo integration completed successfully!")
+        return {"status": "success", "portal": "odoo"}
+        
+    except Exception as e:
+        print(f"❌ Odoo integration failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return {"status": "error", "error": str(e), "portal": "odoo"}   
 
 def start_hhsc_monitoring():
     """Start HHSC continuous monitoring - ONLY PROCESS NEW EMAILS"""
@@ -764,6 +786,16 @@ def start_combined_monitoring():
                     
                     # Process due list using ram1.py
                     due_list_result = run_suresh1_processing()
+
+                    # ===== ADD ODOO AFTER DUE LIST =====
+                    if due_list_result.get('status') == 'success':
+                        print("\n🔄 Due List Complete - Running Odoo Integration...")
+                        odoo_result = run_odoo_integration()
+                        if odoo_result.get('status') == 'success':
+                            print("✅ Odoo posted jobs successfully")
+                        else:
+                            print("⚠️ Odoo had issues")
+                    # ===== END ODOO =====
                     
                     if due_list_result.get('status') == 'success':
                         # Always send job_tracker_report.xlsx
@@ -1010,6 +1042,7 @@ def main():
     print("STEP 1: RUNNING HHSC PORTAL")
     print("=" * 70)
     results['hhsc'] = run_texas1_initial()
+    
     time.sleep(2)
     
     # Step 2: Run VMS Portal
@@ -1018,12 +1051,16 @@ def main():
     print("=" * 70)
     results['vms'] = run_vms1_initial()
     
-    # Step 3: Process Due List using ram1.py
+    # ===== MOVE ODOO BEFORE DUE LIST =====
     print("\n" + "=" * 70)
-    print("STEP 3: PROCESSING DUE LIST DATA (ram1.py)")
+    print("STEP 3: RUNNING ODOO INTEGRATION (BEFORE FOLDERS CLEARED)")
     print("=" * 70)
+    results['odoo'] = run_odoo_integration()
     
-    # Process due list using ram1.py (creates job_tracker_report.xlsx)
+    # Step 4: Process Due List using ram1.py (THIS CLEARS FOLDERS)
+    print("\n" + "=" * 70)
+    print("STEP 4: PROCESSING DUE LIST DATA (ram1.py)")
+    print("=" * 70)
     results['due_list'] = run_suresh1_processing()
     
     # ==================== FIXED EMAIL SENDING LOGIC ====================
@@ -1145,6 +1182,13 @@ def main():
         print(f"   ⏰ Past Due Jobs: {past_due_jobs}")
     else:
         print(f"📊 Due List: ❌ FAILED - {results['due_list'].get('error', 'Unknown error')}")
+
+    # ===== UPDATE ODOO SUMMARY =====
+    if results.get('odoo', {}).get('status') == 'success':
+        print(f"🏢 Odoo Integration (After Due List): ✅ SUCCESS")
+    else:
+        print(f"🏢 Odoo Integration (After Due List): ❌ FAILED - {results['odoo'].get('error', 'Unknown error')}")
+    # ===== END ODOO SUMMARY =====    
     
     print("=" * 70)
     
